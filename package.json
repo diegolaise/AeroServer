@@ -1,0 +1,19 @@
+{
+  "name": "AeroTool",
+  "version": "0.0.1",
+  "private": true,
+  "scripts": {
+    "start": "node aero-server.js"
+  },
+  "dependencies": {
+    "express": "^3.2.6",
+    "cors": "^2.8.1",
+    "mongodb": "^2.2.25",
+    "mongoose": "^4.9.2",
+    "mongoose-text-search": "^0.0.2",
+    "socket.io": "^1.7.3",
+    "mime"     : "*",
+    "xml2js"   : "^0.4.17" 
+    ,"escape-regexp" : "~0.0.1"
+  }
+}
