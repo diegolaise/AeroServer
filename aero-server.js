@@ -1,3 +1,4 @@
+/** SERVER */
 var express = require('express');
 var cors    = require('cors');
 var api     = require('./modules/data-queries.js');
