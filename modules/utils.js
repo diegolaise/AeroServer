@@ -53,6 +53,20 @@ exports.trim = function(spath) {
 	if (!spath) {return "";}
 	return (''+spath).replace(/^[\s\uFEFF\xA0]+|[\s\uFEFF\xA0]+$/g, '');
 };
+ 
+/** Skip USER folder */
+function bUserSkipped(spath) {
+	if (!spath || ! (''+spath).trim()) {
+		return true;
+	}
+	var sPath = (""+spath).toUpperCase();
+	sPath = sPath.trim();
+	if  (sPath.indexOf("/99-USERS/")>0 || sPath.indexOf("/99_USERS/")>0 || sPath.indexOf("/USERS/")>0) {
+		return (sPath.indexOf("/TRASH/")>=0);
+	}
+	return false;
+}
+exports.bUserSkipped = bUserSkipped;
 
 /**
  * Write to file

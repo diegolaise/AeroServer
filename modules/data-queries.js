@@ -10,8 +10,11 @@ var textSearch = require('mongoose-text-search');
 
 //var fs = require('fs');
 var lib_path = require('path');
-var utils = require('./utils.js');
 var escapere = require('escape-regexp');
+
+var utils = require('./utils.js');
+var tree = require('./tree-info.js');
+
 
 //-- Database connection ////////////////////////////////////////////////////////
 
@@ -126,21 +129,8 @@ function getJsonProps() {
 }
 
 
-/** Skip USER folder */
-function bUserSkipped(spath) {
-	if (!spath || ! (''+spath).trim()) {return true;}
-	var sPath = (""+spath).toUpperCase();
-	sPath = sPath.trim();
-	if  (sPath.indexOf("/99-USERS/")>0 || sPath.indexOf("/99_USERS/")>0 || sPath.indexOf("/USERS/")>0) {
-			return (sPath.indexOf("/TRASH/")>=0);
-	}
-	return false;
-}
-
-
-
 /** Get data info */
-function getDataInfos(href, docs, l_direction, callback) {
+function getDataInfos(href, json, l_direction, callback) {
 
 	var jDataInfos = {};
 	
@@ -168,17 +158,17 @@ function getDataInfos(href, docs, l_direction, callback) {
 		//- PARENTS 
 		jDataInfos.parent = [];
 		
-		if (docs) {
+		if (json) {
 			//Get properties
-			for (var x=0; x<docs.properties.length; x++) {
-				var p = docs.properties[x];
+			for (var x=0; x<json.properties.length; x++) {
+				var p = json.properties[x];
 				jDataInfos.metadata[p.name] = p.value;
 			}
 			//Get parent/child
-			for (var k=0; k<docs.links.length; k++) {
-				var lnk = docs.links[k];	
+			for (var k=0; k<json.links.length; k++) {
+				var lnk = json.links[k];	
 				var lpath = lnk.href;
-				if ( !bUserSkipped(lpath)) {		
+				if ( !utils.bUserSkipped(lpath) ) {		
 					if (lnk.is_child && (l_direction==="both" || l_direction==="child")) {
 						jDataInfos.children.push(lpath);
 					}
@@ -189,33 +179,36 @@ function getDataInfos(href, docs, l_direction, callback) {
 			} 
 		}
 		
+		//Read all versions
 		jDataInfos.versions = [];  	
 		DataModel.find({'href': new RegExp('^'+spath+'\\?ver=?', "i")}, {version: 1, _id: 0}, function(err, jres) { 
 			if (err) {
-				console.log('getDatasInfos error: ' + JSON.stringify(err, null, 4) ); 
-				jDataInfos.versions.push("1");
+				console.log(' getDatasInfos error: ' + JSON.stringify(err, null, 4) ); 
+				jDataInfos.versions.push("1"+op.version);
 			} 
 			else { 
 				for (var i = 0; i< jres.length; i++) {
 					jDataInfos.versions.push(jres[i].version);
 				}   
+				jDataInfos.versions.sort();
 			}
 			if (callback) {
 				callback(jDataInfos);
 			}
 		});
 		 
-	} catch (ee) {}
-	
-//	if (callback) {
-//		callback(jDataInfos);
-//	}
-//	return jDataInfos;
+	} catch (ee) {
+		console.log("ERROR getDataInfos: " + ee);
+		if (callback) {
+			callback(jDataInfos);
+		}
+	}
 }
 
 /** Get Properties (metadata) for db */
 function getProperties(href, callback) {
 	var jMetadata = getJsonProps();
+	
 	DataModel.findOne({'href' : href}, function(err, docs) {
 		if (!err && docs) {
 			var props = docs._doc;
@@ -225,7 +218,9 @@ function getProperties(href, callback) {
 				if (!p.value && p.name === "From process") {
 					p.value = "NONAME";
 				}
-				jMetadata[p.name] = p.value;
+				if (jMetadata.hasOwnProperty(p.name)) {
+					jMetadata[p.name] = p.value;
+				}
 			}
 		}
 		else {			
@@ -238,76 +233,70 @@ function getProperties(href, callback) {
 				var ext = fname.substring(i+1);
 				jMetadata.Type = ext;
 			}
-		}
-		
+		}		
 		callback(jMetadata);
 	}); 
 }
 
 /**
- * Read ancestors (Parent/Child) cascade
+ * Read links (Parent/Child)
  */
-function getLinks(iLevel, lnkName, jData, jResults, isChild, callback) {
-	//End cascade
-	if (iLevel === 0) {
-		callback();
-		return;
-	}
-	
+function readLinks(lnk_direction, jData, jResults, callback) {
+
 	// Read data from db 
-	function getLinkInfos(lvl, jLinks) {
-		if (!jLinks || jLinks.length===0) {
-			if (callback) {
-				callback();
+	var nextLinkInfos = function (tabLinks, endLinkHandler) {
+		
+ 		if (!tabLinks || tabLinks.length===0) {
+ 			console.log(" End read link " + lnk_direction);
+			if (endLinkHandler) {
+				endLinkHandler();
 			}
 		}
 		else {
 			//Remove first element
-			var path = jLinks.splice(0, 1)[0];
-			//console.log("Path " + path);
-			if (bUserSkipped(path)) { 
-				getLinkInfos(lvl, jLinks);			
+			var path = tabLinks.shift();
+			console.log(" Read link " + lnk_direction + ": " + path);
+			
+			if (utils.bUserSkipped(path)) { 
+				nextLinkInfos(tabLinks, endLinkHandler);			
 			}
 			else {
-				
+				//Read info
 				DataModel.findOne({href: path}, function(err, docs) {
-					var il = lvl - 1;
+					
 					var json = {};
 					if (err) {
-						console.log('find '+ path + ' error: ' + JSON.stringify(err, null, 4) );
-						docs = null;
+						console.log('readLinks '+ path + ' error: ' + JSON.stringify(err, null, 4) );
 					} 
 					else {
 						json = docs._doc;
 					}
 		
 					//Get informations for this path of this level
-					getDataInfos(path,json, isChild, function(jDataInfo) {
-		
+					getDataInfos(path, json, lnk_direction, function(jDataInfo) {	
 						if (jDataInfo) {
 							jResults.push(jDataInfo);
 						}
-		
-						//Recusrsive read ancestor
-						getLinks(il, lnkName, jDataInfo, jResults, isChild, function() {
-							getLinkInfos(il, jLinks);
-						});
+						//Read next
+						nextLinkInfos(tabLinks, endLinkHandler);
 					});
 				});	
 				
 			}//end else buserSkip
 		} //end else jlink
-	} //end function
+	}; //end function
 
 	//Get list of link
-	if (jData[lnkName]) {
-		var o = jData[lnkName].slice();
-		if (o) {
-			getLinkInfos(iLevel, o);
-		}
+	if (jData[lnk_direction]) {
+		//clone array
+		var tab = jData[lnk_direction].slice();
+		nextLinkInfos(tab, callback); 
 	} 
 	else if (callback) {
 		callback();
+	}
+	else {
+		return {};
 	}
 }
 
@@ -346,165 +335,185 @@ exports.insertFile = function (req, res) {
 /** Load data with properties */
 exports.getDatas = function(req, res) {
 	var path 	= req.params.filepath;
-	var iLevel 	= Number(req.params.level);	
-	
-	console.log("-> Call getDatas " + path + " :" + iLevel); //JSON.stringify(req.params, null, 4) );
+	console.log("\nCall getDatas: " + path); 
 
 	//Callback
-	var sendResult = function(jData) {
+	var dataInfoDone = function(jData) {
 		//Get all others versions
-		//jData.versions = jData.versions; 
 		jData.metaByVersion = {}; 
-		
-		var nbVers = jData.versions.length; 
-//
+
+		//
+		// Send response callback
+		//
 		var jResults = []; 
-		function endCall() {
-			console.log("sendDatas : " + jResults.length );
+		function sendResponse() { 
 			res.send({ data : jResults });
 		}
 		
 		//Get metadata per versions
 		var o = utils.parseHref(path);
-		var getMetadata = function(idx) {
-			if (idx<=0) {
+		var filepath = o.filepath;
+
+		// Read Properties of each version (for metadataByVersion)
+		var tabVersion = jData.versions.slice();
+		
+		//End get properties for versions
+		var endGetProperties = function(jMeta) {
+			var sVer = "" + tabVersion.shift();
+			jMeta.Version = sVer;
+			
+			jData.metaByVersion[sVer] = jMeta;
+			if (tabVersion.length===0) {
 				jResults.push(jData);
 				
-				mongoose.set('debug', true);
-				getLinks(iLevel, "parent", jData, jResults, "false", function() {
-					console.log("End get parent ...");
-					
-					if (jData.children.length>0) {
-						getLinks(iLevel, "children", jData, jResults, "true", endCall);
+				//Continue ... read Links
+				//mongoose.set('debug', true);
+				readLinks("parent", jData, jResults, function() {
+					//console.log("End get parent ..."); 
+					if (jData.children.length>0) { 
+						readLinks("children", jData, jResults, sendResponse);
 					}
 					else {
-						endCall();
+						sendResponse();
 					}
-				}); 
-				return; 
+				});
 			}
-			
+		};
+		
+		//--
+		// Read Properties of each version (for metadataByVersion)
+		//--
+		for (var idx=0; idx<jData.versions.length; idx++) {
 			var sVer = (""+jData.versions[idx]); 	
 			if (sVer !== jData.version) {		
 				var sPathVers = o.filepath + "?ver=" + sVer;
-				getProperties(sPathVers, function(jMeta) {
-					jMeta.Version = sVer;
-					jData.metaByVersion[sVer] = jMeta;
-					getMetadata(--idx); 
-				}); 
+				getProperties(sPathVers, endGetProperties); 
 			}
 			else {
-				getMetadata(--idx);
+				//Remove this entry
+				tabVersion.shift();
 			}
-		};   
-	    getMetadata(--nbVers);
-		 
-	};
+		}
+		
+	}; //end send result
 	
-	DataModel.findOne({href: path}, function(err, docs) {
+	//--
+	// Get the data from db
+	//--
+	DataModel.findOne({href: path}, function(err, json) {
 		if (err) {
-			console.log('getDatas error: ' + JSON.stringify(err, null, 4) );
-			res.res.status(500).send(err.data);
+			console.log(' getDatas error: ' + JSON.stringify(err, null, 4) );
+			res.status(500).send(err.data);
 		} 
 		else {
-			/// Get data informations ///
-			console.log('getDatas Ok: ' + JSON.stringify(docs, null, 4) );
-			getDataInfos(path, docs, "both", sendResult);
+			/// Get data informations
+			//console.log('getDatas Ok: ' + JSON.stringify(json, null, 4) );
+			getDataInfos(path, json, "both", dataInfoDone);
 		}
-    });//end findOne	
+    });//end findOne
+	
 }; //end getDatas
+
+
+/**
+ * Get Entry Information
+ */
+exports.getEntryInfo = function(request, response) {
+	
+	var tdata = request.params.data;
+	var sPath = request.params.path;
+	
+	var l_direction = request.pareams.children; 
+	if (utils.isEmpty(l_direction)) {
+		l_direction = "both";
+	}
+	
+	var jResults = [];  
+	 
+	var IDX = 1;
+	if (tdata) { 
+		IDX = tdata.length - 1;
+		sPath = tdata[IDX];
+	}
+	
+	//-
+	//	Read data from db
+	//-
+	function readData(path) {
+		//Callback function
+		var callback = function(json) { 
+			if (json) {
+				jResults.push(json);
+			} 
+			if ( (--IDX)<=0) {
+				//end Request
+				response.send({"data": jResults});
+			}
+			else if (tdata) { 
+				//Next data 
+				readData(tdata[IDX]);
+			}
+		};
+
+		if (utils.bUserSkipped(path)) { 
+			callback(null);
+		}
+		else {
+			DataModel.findOne({href: path}, function(err, docs) {
+				if (err) {
+					console.log('getEntryInfo error: ' + JSON.stringify(err, null, 4) );
+					response.status(500).send(err.data);
+				} 
+				else { 
+					getDataInfos(path, docs, l_direction, callback);
+				}
+			});//end findOne
+		}
+	}
+	
+	//Launch
+	readData(sPath);
+	
+}; //end getEntryInfo
+
 
 /** Get TREE nodes */
 exports.getTreeNodes = function(request, response) {
 
-		//Root Path
-		var sPathUri = request.params.path;
-		if (!sPathUri) {
-			response.status(500).send({responseText : "No search 'root path' parameter was given"});
+	//Root Path
+	var sPathUri = request.params.path;
+	if (!sPathUri) {
+		response.status(500).send({responseText : "No search 'root path' parameter was given"});
+	}
+
+	//Check if get folder only (ex: for study root)
+	var bfoldOnly = false;
+	var sFolderOnly = request.params.folder;
+	if (sFolderOnly && sFolderOnly==="true") {
+		bfoldOnly = true;
+	}
+
+	var rLevel = 0; //root level
+	var sLevel = request.params.rootLevel;	
+	if (sLevel) {
+		rLevel = Number(sLevel);
+	}
+
+	//Get all active files
+	DataModel.find({isActive : true}, {href:1, filepath:1, _id: 0}) //get href and filepath only
+	.sort({ href: 1 }) //sort by href asc
+	.exec(function(err, docs) {
+
+		if (err) {
+			response.status(500).send(err.data);
 		}
- 
-		//Check if get folder only (ex: for study root)
-		var bfoldOnly = false;
-		var sFolderOnly = request.params.folder;
-		if (sFolderOnly && sFolderOnly==="true") {
-			bfoldOnly = true;
-		}
-		
-		var rLevel = 0; //root level
-		var sLevel = request.params.rootLevel;	
-		if (sLevel) {
-			rLevel = Number(sLevel);
-		}
-		
-		//Get all active files
-		DataModel.find({isActive : true}, {href:1, filepath:1, _id: 0}) //get href and filepath only
-				 .sort({ href: 1 }) //sort by href asc
-				 .exec(function(err, docs) {
-						 
-			var results = []; 
-			var all_nodes = {};
-			
-			for (var i=0; i<docs.length; i++) {
-				var o = docs[i];
-				
-				//Get folders
-				var dir = lib_path.dirname(o.href);
-				var tb = dir.split("/");
-				var fold = "";
-				
-				//Start to 1 because tb[0] is empty
-				for (var j=1; j<tb.length; j++) {
-
-					//Skip root < rootlevel (ex: Projects)
-					if ((j-1) < rLevel) {
-						continue;
-					}
-					
-					//Parent folder
-					var p_fold = fold;
-					
-					//Current folder
-					var foldername = tb[j];
-					fold += "/" + foldername;
-					
-					//If new folder
-					if ( !(fold in all_nodes) ) {
-						var node = { "text"  : foldername
-									, "href" : fold
-									, "tags" : "0"
-									, "nodes": []
-									};
-						all_nodes[fold] = node;
-
-						//Node must push to its parent
-						if (p_fold) {
-							var p_node = all_nodes[p_fold];
-							p_node.nodes.push(node);
-						}
-						
-						//Add first dir after projects to root node
-						if ((j-1) === rLevel) {
-							results.push(node);
-						}
-					}
-				}
-
-				//Append file to last dir node, if not fold only
-				if (!bfoldOnly) {		
-					var fpath = utils.parseHref(o.href);
-					//the file node
-					var fnode = { "text"  : fpath.label
-								 , "href" : o.filepath
-								 , "tags" : "1"    //(isFile ? "1" : "0") ??
-								 //, "nodes": [{}] //no children for file
-					}; 
-					var pNode = all_nodes[dir];
-					pNode.nodes.push(fnode);
-				}
-			}
-
+		else {
 			/// Send results roots
-			response.send(results);
-		});
-}; //end gerTreeInfo
+			tree.parseTree(docs, rLevel, bfoldOnly, function(results) {
+				response.send(results);
+			});
+		}
+	});
+}; //end getTreeNodes
+
  
