@@ -20,16 +20,18 @@ var tree = require('./tree-info.js');
 
 var db_ip   = 'localhost'; //TODO : set ip of the database
 var db_name = 'Aero';
+var db_port =  8000;
+//var db_port =  27017;
 
-mongoose.set('debug', false);
+mongoose.set('debug', true);
 mongoose.Promise = global.Promise;
 
-var connection = mongoose.createConnection('mongodb://'+db_ip+'/'+db_name 
+var connection = mongoose.createConnection('mongodb://'+db_ip+':'+db_port+'/'+db_name 
 		, { server: {socketOptions: {socketTimeoutMS: 0, connectionTimeout: 0}} }
 );
 connection.on('error', console.error.bind(console, 'db connection error:'));
 connection.once('open', function callback() {
-	console.log('Use Mongodb : ' + db_ip);
+	console.log('Use Mongodb : ' + db_ip + ":" + db_port);
     console.log('Connection to the database: OK');
 });
 
@@ -168,7 +170,8 @@ function getDataInfos(href, json, l_direction, callback) {
 			for (var k=0; k<json.links.length; k++) {
 				var lnk = json.links[k];	
 				var lpath = lnk.href;
-				if ( !utils.bUserSkipped(lpath) ) {		
+				
+				if ( !utils.skipPath(lpath) ) {		
 					if (lnk.is_child && (l_direction==="both" || l_direction==="child")) {
 						jDataInfos.children.push(lpath);
 					}
@@ -257,7 +260,7 @@ function readLinks(lnk_direction, jData, jResults, callback) {
 			var path = tabLinks.shift();
 			console.log(" Read link " + lnk_direction + ": " + path);
 			
-			if (utils.bUserSkipped(path)) { 
+			if (utils.skipPath(path)) { 
 				nextLinkInfos(tabLinks, endLinkHandler);			
 			}
 			else {
@@ -400,7 +403,7 @@ exports.getDatas = function(req, res) {
 	//--
 	// Get the data from db
 	//--
-	DataModel.findOne({href: path}, function(err, json) {
+	DataModel.findOne({href: path}, {_id: 0}, function(err, json) {
 		if (err) {
 			console.log(' getDatas error: ' + JSON.stringify(err, null, 4) );
 			res.status(500).send(err.data);
@@ -420,58 +423,53 @@ exports.getDatas = function(req, res) {
  */
 exports.getEntryInfo = function(request, response) {
 	
-	var tdata = request.params.data;
-	var sPath = request.params.path;
-	
-	var l_direction = request.pareams.children; 
-	if (utils.isEmpty(l_direction)) {
+	var tdata = request.params.path;
+	var l_direction = request.params.lnkdir; 
+	if (!l_direction || utils.isEmpty(l_direction)) {
 		l_direction = "both";
 	}
 	
 	var jResults = [];  
-	 
-	var IDX = 1;
-	if (tdata) { 
-		IDX = tdata.length - 1;
-		sPath = tdata[IDX];
-	}
-	
+ 
 	//-
 	//	Read data from db
 	//-
 	function readData(path) {
 		//Callback function
-		var callback = function(json) { 
+		var nextData = function(json) { 
 			if (json) {
 				jResults.push(json);
 			} 
-			if ( (--IDX)<=0) {
+			if ( tdata.length === 0) {
 				//end Request
 				response.send({"data": jResults});
 			}
-			else if (tdata) { 
+			else { 
 				//Next data 
-				readData(tdata[IDX]);
+				var sPath = tdata.shift();
+				readData(sPath);
 			}
 		};
 
-		if (utils.bUserSkipped(path)) { 
-			callback(null);
+		if (utils.skipPath(path)) { 
+			nextData();
 		}
 		else {
 			DataModel.findOne({href: path}, function(err, docs) {
 				if (err) {
 					console.log('getEntryInfo error: ' + JSON.stringify(err, null, 4) );
-					response.status(500).send(err.data);
+					//response.status(500).send(err.data);
+					nextData();
 				} 
 				else { 
-					getDataInfos(path, docs, l_direction, callback);
+					getDataInfos(path, docs, l_direction, nextData);
 				}
 			});//end findOne
 		}
 	}
 	
 	//Launch
+	var sPath = tdata.shift();
 	readData(sPath);
 	
 }; //end getEntryInfo

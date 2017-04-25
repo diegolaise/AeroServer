@@ -20,6 +20,7 @@ app.use(express.static(__dirname + '/../AeroDatas'));
 app.get('/api/authenticate', api.connectUser);
 //Get data info
 app.get('/getDatas/:level/:filepath', api.getDatas);
+app.get('/getEntry/:path/:lnkdir', api.getEntryInfo);
 
 app.set('port', process.env.PORT || 3000);
 app.listen(app.get('port'));

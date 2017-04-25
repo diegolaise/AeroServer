@@ -54,8 +54,8 @@ exports.trim = function(spath) {
 	return (''+spath).replace(/^[\s\uFEFF\xA0]+|[\s\uFEFF\xA0]+$/g, '');
 };
  
-/** Skip USER folder */
-function bUserSkipped(spath) {
+/** Skip USER Trash folder */
+function skipPath(spath) {
 	if (!spath || ! (''+spath).trim()) {
 		return true;
 	}
@@ -66,7 +66,7 @@ function bUserSkipped(spath) {
 	}
 	return false;
 }
-exports.bUserSkipped = bUserSkipped;
+exports.skipPath = skipPath;
 
 /**
  * Write to file
@@ -305,57 +305,74 @@ var createDocuments = function(project, saveDataCallback) {
 					   //this.writeToFile(getPath(jsonName,'_xml'), result); 
 					   writeFile(jsonName, result, '_xml');
 				   }
-  
-				   try {
-					   var s = result.meta.info[0].sourceControl[0];
-					   if (s && s.comment) {
-						   djson.comment = result.meta.info[0].sourceControl[0].comment[0];
-					   }
-				   } catch (err) {
-					   //console.log( "No source ctrl: " + metafile + " " + err);
-				   }
+				   
+				   if (result.meta) {
 
-				   var f = result.meta.info[0].href[0];						
-				   djson.href = f.substring( f.indexOf("/Projects/") );
-				   //console.log(''+djson.href);
+					   if (result.meta.info && result.meta.info.length>0) {
+						   var resMetaInfoZero = result.meta.info[0];
+						    
+						   if (resMetaInfoZero.sourceControl && resMetaInfoZero.sourceControl.lenght>0) {
+							   var s = resMetaInfoZero.sourceControl[0];
+							   if (s && s.comment && s.comment.length>0) {
+								   djson.comment = s.comment[0];
+							   }
+						   }
+						   
+//						   try {
+//							   var s = result.meta.info[0].sourceControl[0];
+//							   if (s && s.comment) {
+//								   djson.comment = result.meta.info[0].sourceControl[0].comment[0];
+//							   }
+//						   } catch (err) {
+//							   //console.log( "No source ctrl: " + metafile + " " + err);
+//						   }
 
-				   var p = result.meta.properties[0];
-				   if (p) {
-					   var tprop = result.meta.properties[0].property;
-					   if (tprop) {
-						   for (var i=0; i<tprop.length; i++) {
-							   var prop = tprop[i];
-							   var obj = { 
-									   name  : prop.$.name
-									   , type  : (prop.$.ns ? prop.$.ns : "")
-									   , value : (prop._ ? prop._ : "")
-							   }; 
-							   djson.properties.push(obj);
+						   if (resMetaInfoZero.href && resMetaInfoZero.href.length>0) {
+							   var f = result.meta.info[0].href[0];						
+							   djson.href = f.substring( f.indexOf("/Projects/") );
 						   }
 					   }
-				   }
 
-				   p = result.meta.links[0];
-				   if (p) {
-					   var tlinks = result.meta.links[0].link;
-					   if (tlinks) {
-						   for (var j=0; j<tlinks.length; j++) {
-							   var link = tlinks[j];
-							   var hr = link.$.href;
-							   if (hr) {
-								   var olink = { 
-										   name  : link.$.name
-										   , type  : (link.$.ns ? link.$.ns : "")
-										   , value : (link._ ? link._ : "")
-										   , href  : hr.substring(hr.indexOf("/Projects/"))
-										   , is_child : (link.incoming ? true : false)
+					   if (result.meta.properties && result.meta.properties.length>0) {
+						   var tprop = result.meta.properties[0].property;
+						   if (tprop) {
+							   for (var i=0; i<tprop.length; i++) {
+								   var prop = tprop[i];
+								   var obj = { 
+										   name  : prop.$.name
+										   , type  : (prop.$.ns ? prop.$.ns : "")
+										   , value : (prop._ ? prop._ : "")
 								   }; 
-								   djson.links.push(olink);
+								   djson.properties.push(obj);
+							   }
+						   } 
+					   }
+
+					   if (result.meta.links && result.meta.links.length>0) {
+						   var p = result.meta.links[0];
+						   if (p) {
+							   var tlinks = result.meta.links[0].link;
+							   if (tlinks) {
+								   for (var j=0; j<tlinks.length; j++) {
+									   var link = tlinks[j];
+									   var hr = link.$.href;
+									   if (hr) {
+										   var olink = { 
+												   name  : link.$.name
+												   , type  : (link.$.ns ? link.$.ns : "")
+												   , value : (link._ ? link._ : "")
+												   , href  : hr.substring(hr.indexOf("/Projects/"))
+												   , is_child : (link.incoming ? true : false)
+										   }; 
+										   djson.links.push(olink);
+									   }
+								   }
 							   }
 						   }
 					   }
-				   }
-			   }
+					   
+				   }//end if result.meta
+			   }//end parseString
 			   
 			    // Save ////
 				if (bSaveData) {
@@ -425,7 +442,7 @@ exports.parseHref = function(href) {
  
 function treeInfo(sPath, jsResult, iLevel, bFolderOnly) {
 	//Skip USER folder
-	if (bUserSkipped(sPath)) { return; }
+	if (skipPath(sPath)) { return; }
 	 
 	var cpath = utils.parseHref(sPath);
 	var filename  = cpath.label;
