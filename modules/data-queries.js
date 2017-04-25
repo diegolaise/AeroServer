@@ -8,7 +8,7 @@
 var mongoose = require('mongoose');
 var textSearch = require('mongoose-text-search');
 
-//var fs = require('fs');
+var fs = require('fs');
 var lib_path = require('path');
 var escapere = require('escape-regexp');
 
@@ -417,6 +417,59 @@ exports.getDatas = function(req, res) {
 	
 }; //end getDatas
 
+exports.getListFiles = function(request, response) {
+	var folder = request.params.path;
+	var dir = lib_path.normalize(__dirname + '/../../AeroDatas/' + folder);
+	
+	try {
+		if (fs.statSync(dir)) { // or fs.existsSync 
+			
+			// Read the directory
+			fs.readdir(dir, function (err, list) {
+				var tabf = [];
+				for (var i=0; i<list.length; i++) {
+					var file = list[i];
+					var fpath = lib_path.normalize(dir + lib_path.sep + file);
+					var stats = fs.statSync(fpath);
+					// If the file is a directory
+					if (stats && stats.isFile()) {
+						tabf.push(file);
+					}
+				}
+				
+				response.send({data: tabf});
+			});
+		}  
+	} catch (err) {
+		response.send({data:[]});
+	} //end try 
+};
+
+exports.removeFiles = function(request, response) {
+	var tpath = request.params.path;
+	
+	var success = true;
+	
+	function removeFile() {
+		if (tpath.length === 0) {
+			response.send(success);
+		}
+		else {
+			var file = tpath.shift();
+			var filePath = lib_path.normalize(__dirname + '/../../AeroDatas/' + file);
+			
+			try {
+				if (fs.statSync(filePath)) {  
+					fs.unlinkSync(filePath);
+				}  
+			} catch (err) {
+				success = false;
+			} //end try 
+			removeFile();
+		}
+	}
+	removeFile();
+};
 
 /**
  * Get Entry Information

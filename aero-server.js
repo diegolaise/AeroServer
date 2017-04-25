@@ -21,6 +21,8 @@ app.get('/api/authenticate', api.connectUser);
 //Get data info
 app.get('/getDatas/:level/:filepath', api.getDatas);
 app.get('/getEntry/:path/:lnkdir', api.getEntryInfo);
+app.get('/getListFiles/:path', api.getListFiles);
+app.get('/removeFiles/:path', api.removeFiles);
 
 app.set('port', process.env.PORT || 3000);
 app.listen(app.get('port'));
