@@ -1,8 +1,8 @@
-/**===========================================================================
- * 
- * 							GENERAL QUERIES
- * 
- * ==========================================================================*/
+//===========================================================================
+// 
+//							GENERAL DATA QUERIES
+// 
+//==========================================================================*/
 "use strict";
 
 var mongoose = require('mongoose');
@@ -116,8 +116,8 @@ function saveData(djson) {
 
 /** Json properties */
 function getJsonProps() {
-	return 	{ "Version"		: ""
-			, "From tool"	: "Property"
+	return 	{
+			"From tool"		: "Property" 
 			, "From process": "EMPTY"
 			, "Description" : ""
 			, "Type" 		: ""
@@ -153,6 +153,7 @@ function getDataInfos(href, json, l_direction, callback) {
 
 		//- PROPERTIES (metadata)
 		jDataInfos.metadata = getJsonProps();
+		jDataInfos.metadata.Version =  op.version;
 
 		//- CHILDREN
 		jDataInfos.children = [];
@@ -166,13 +167,14 @@ function getDataInfos(href, json, l_direction, callback) {
 				var p = json.properties[x];
 				jDataInfos.metadata[p.name] = p.value;
 			}
+			
 			//Get parent/child
 			for (var k=0; k<json.links.length; k++) {
 				var lnk = json.links[k];	
 				var lpath = lnk.href;
 				
 				if ( !utils.skipPath(lpath) ) {		
-					if (lnk.is_child && (l_direction==="both" || l_direction==="child")) {
+					if (lnk.is_child && (l_direction==="both" || l_direction==="child" || l_direction==="children")) {
 						jDataInfos.children.push(lpath);
 					}
 					if (!lnk.is_child && (l_direction==="both" || l_direction==="parent")) {
@@ -223,6 +225,9 @@ function getProperties(href, callback) {
 				}
 				if (jMetadata.hasOwnProperty(p.name)) {
 					jMetadata[p.name] = p.value;
+				}
+				else if (p.name === "version") {
+					jMetadata.Version = p.value;
 				}
 			}
 		}
@@ -320,17 +325,19 @@ exports.connectUser = function (req, res) {
 				}
 	        });
 };
-
-/** Save data */
+ 
+/** Save data to database Project collection */
 exports.insertFile = function (req, res) {
 	var json = req.param.jdata;
 	var data = new DataModel(json);
 	data.save(function(err) {
 		if (err) {
 			console.log("ERROR saving: " + err);
+			req.send({success: false, error: err});
 		}
 		else {
 			console.log(data.id + " Saved Successfully");
+			req.send({success: true});
 		}
 	});
 };
@@ -362,7 +369,7 @@ exports.getDatas = function(req, res) {
 		
 		//End get properties for versions
 		var endGetProperties = function(jMeta) {
-			var sVer = "" + tabVersion.shift();
+			var sVer = ("" + tabVersion.shift());
 			jMeta.Version = sVer;
 			
 			jData.metaByVersion[sVer] = jMeta;
@@ -381,23 +388,24 @@ exports.getDatas = function(req, res) {
 					}
 				});
 			}
+			else {
+				nextProperties(sVer);
+			}
 		};
 		
 		//--
 		// Read Properties of each version (for metadataByVersion)
-		//--
-		for (var idx=0; idx<jData.versions.length; idx++) {
-			var sVer = (""+jData.versions[idx]); 	
-			if (sVer !== jData.version) {		
+		//-- 
+		function nextProperties(sVer) {   
+			if ( (""+sVer) !== jData.version) {		
 				var sPathVers = o.filepath + "?ver=" + sVer;
 				getProperties(sPathVers, endGetProperties); 
 			}
 			else {
-				//Remove this entry
-				tabVersion.shift();
+				endGetProperties(jData.metadata);
 			}
 		}
-		
+		nextProperties(tabVersion[0]);
 	}; //end send result
 	
 	//--
@@ -417,66 +425,21 @@ exports.getDatas = function(req, res) {
 	
 }; //end getDatas
 
-exports.getListFiles = function(request, response) {
-	var folder = request.params.path;
-	var dir = lib_path.normalize(__dirname + '/../../AeroDatas/' + folder);
-	
-	try {
-		if (fs.statSync(dir)) { // or fs.existsSync 
-			
-			// Read the directory
-			fs.readdir(dir, function (err, list) {
-				var tabf = [];
-				for (var i=0; i<list.length; i++) {
-					var file = list[i];
-					var fpath = lib_path.normalize(dir + lib_path.sep + file);
-					var stats = fs.statSync(fpath);
-					// If the file is a directory
-					if (stats && stats.isFile()) {
-						tabf.push(file);
-					}
-				}
-				
-				response.send({data: tabf});
-			});
-		}  
-	} catch (err) {
-		response.send({data:[]});
-	} //end try 
-};
-
-exports.removeFiles = function(request, response) {
-	var tpath = request.params.path;
-	
-	var success = true;
-	
-	function removeFile() {
-		if (tpath.length === 0) {
-			response.send(success);
-		}
-		else {
-			var file = tpath.shift();
-			var filePath = lib_path.normalize(__dirname + '/../../AeroDatas/' + file);
-			
-			try {
-				if (fs.statSync(filePath)) {  
-					fs.unlinkSync(filePath);
-				}  
-			} catch (err) {
-				success = false;
-			} //end try 
-			removeFile();
-		}
-	}
-	removeFile();
-};
-
-/**
- * Get Entry Information
- */
+/** Get Entry Node Information */
 exports.getEntryInfo = function(request, response) {
 	
-	var tdata = request.params.path;
+	var p = request.params.path;
+	var tdata = [];
+	if (utils.isArray(p)) {
+		tdata  = p;
+	}
+	else if (p.indexOf(",")<0){
+		tdata.push(p);
+	}
+	else {
+		tdata = p.split(",");
+	}
+	
 	var l_direction = request.params.lnkdir; 
 	if (!l_direction || utils.isEmpty(l_direction)) {
 		l_direction = "both";
@@ -527,6 +490,7 @@ exports.getEntryInfo = function(request, response) {
 	
 }; //end getEntryInfo
 
+///--- TREE HANDLER //////////////////////////////////////////////////////
 
 /** Get TREE nodes */
 exports.getTreeNodes = function(request, response) {
@@ -566,5 +530,74 @@ exports.getTreeNodes = function(request, response) {
 		}
 	});
 }; //end getTreeNodes
+
+///--- FS FILE HANDLER //////////////////////////////////////////////////////
+
+/** Get fs list files of directory */
+exports.getListFiles = function(request, response) {
+	var folder = request.params.path;
+	var dir = lib_path.normalize(__dirname + '/../../AeroDatas/' + folder);
+	
+	try {
+		if (fs.statSync(dir)) { // or fs.existsSync 
+			
+			// Read the directory
+			fs.readdir(dir, function (err, list) {
+				var tabf = [];
+				for (var i=0; i<list.length; i++) {
+					var file = list[i];
+					var fpath = lib_path.normalize(dir + lib_path.sep + file);
+					var stats = fs.statSync(fpath);
+					// If the file is a directory
+					if (stats && stats.isFile()) {
+						tabf.push(file);
+					}
+				}
+				
+				response.send({data: tabf});
+			});
+		}  
+	} catch (err) {
+		response.send({data:[]});
+	} //end try 
+};
+
+/** Remove fs files */
+exports.removeFiles = function(request, response) {
+	var p= request.params.path;
+	
+	var tpath  = [];
+	if (utils.isArray(p)) {
+		tpath  = p;
+	}
+	else if (p.indexOf(",")<0){
+		tpath.push(p);
+	}
+	else {
+		tpath = p.split(",");
+	}
+	
+	var success = true;
+	
+	function removeFile() {
+		if (tpath.length === 0) {
+			response.send(success);
+		}
+		else {
+			var file = tpath.shift();
+			var filePath = lib_path.normalize(__dirname + '/../../AeroDatas/' + file);
+			
+			try {
+				if (fs.statSync(filePath)) {  
+					fs.unlinkSync(filePath);
+				}  
+			} catch (err) {
+				success = false;
+			} //end try 
+			removeFile();
+		}
+	}
+	removeFile();
+};
 
  

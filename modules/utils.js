@@ -15,29 +15,29 @@ var bWriteJson = false;
 
 /// Internal functions ///////////////////////////////////////////
 
-var isArray = function(a) {
+exports.isArray = function(a) {
     return (!!a) && (a.constructor === Array);
 }; 
 
-var isObject = function(a) {
+exports.isObject = function(a) {
     return (!!a) && (a.constructor === Object);
 };
 
-var isString = function(a) {
+exports.isString = function(a) {
     return (!!a) && (a.constructor === String);
 };
 
-var isEmpty = function(obj) {
+exports.isEmpty = function(obj) {
 	if (!obj) {
 		return true;
 	}
-	if (isObject(obj)) {
+	if (this.isObject(obj)) {
 		return (Object.getOwnPropertyNames(obj).length === 0);
 	}
-	if (isArray(obj)) {
+	if (this.isArray(obj)) {
 		return (obj.length===0);
 	}	
-	if (isString(obj)) {
+	if (this.isString(obj)) {
 		return (obj.trim()==="");
 	}
 	return false;
@@ -75,10 +75,10 @@ exports.writeToFile = function(targetPath, data, callback) {
 	var ok = true;
 	var sdata = "";
 	
-	if (isArray(data)) {
+	if (this.isArray(data)) {
 		sdata = JSON.stringify(data);
 	}
-	else if (isObject(data)) {
+	else if (this.isObject(data)) {
 		sdata = JSON.stringify(data, null, 4);
 	}
 	else {
