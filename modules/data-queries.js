@@ -23,7 +23,7 @@ var db_name = 'Aero';
 var db_port =  8000;
 //var db_port =  27017;
 
-mongoose.set('debug', true);
+mongoose.set('debug', false);
 mongoose.Promise = global.Promise;
 
 var connection = mongoose.createConnection('mongodb://'+db_ip+':'+db_port+'/'+db_name 
@@ -114,23 +114,6 @@ function saveData(djson) {
 
 // INTERNAL FUNCTION //////////////////////////////////////////////
 
-/** Json properties */
-function getJsonProps() {
-	return 	{
-			"From tool"		: "Property" 
-			, "From process": "EMPTY"
-			, "Description" : ""
-			, "Type" 		: ""
-			, "Data Origin" : ""
-			, "Status" 		: ""
-			, "Study Type" 	: ""
-			, "Aircraft" 	: ""
-			, "Program" 	: ""
-			, "Creation version" : ""
-			};
-}
-
-
 /** Get data info */
 function getDataInfos(href, json, l_direction, callback) {
 
@@ -148,12 +131,15 @@ function getDataInfos(href, json, l_direction, callback) {
 		//VERSION
 		jDataInfos.version = op.version;
 		
+		//FILE path for opening
+		jDataInfos.filepath = json.filepath;
+		jDataInfos.mimeType = jDataInfos.mimeType;
+				
  		//All others versions
 		var spath = op.filepath; //utils.escapeRegExp(op.filepath); 
-
+		
 		//- PROPERTIES (metadata)
-		jDataInfos.metadata = getJsonProps();
-		jDataInfos.metadata.Version =  op.version;
+		jDataInfos.metadata = {}; 
 
 		//- CHILDREN
 		jDataInfos.children = [];
@@ -165,7 +151,9 @@ function getDataInfos(href, json, l_direction, callback) {
 			//Get properties
 			for (var x=0; x<json.properties.length; x++) {
 				var p = json.properties[x];
-				jDataInfos.metadata[p.name] = p.value;
+				if ( ! jDataInfos.metadata[p.name] ){
+					jDataInfos.metadata[p.name] = p.value;
+				}
 			}
 			
 			//Get parent/child
@@ -212,7 +200,7 @@ function getDataInfos(href, json, l_direction, callback) {
 
 /** Get Properties (metadata) for db */
 function getProperties(href, callback) {
-	var jMetadata = getJsonProps();
+	var jMetadata = {};
 	
 	DataModel.findOne({'href' : href}, function(err, docs) {
 		if (!err && docs) {
@@ -223,16 +211,14 @@ function getProperties(href, callback) {
 				if (!p.value && p.name === "From process") {
 					p.value = "NONAME";
 				}
-				if (jMetadata.hasOwnProperty(p.name)) {
+				//Ne pas ecraser les valeurs en cas de doublons
+				if ( !jMetadata.hasOwnProperty(p.name) || !jMetadata[p.name]) {
 					jMetadata[p.name] = p.value;
-				}
-				else if (p.name === "version") {
-					jMetadata.Version = p.value;
-				}
+				} 
 			}
 		}
-		else {			
-			//Failed to get metadata : Order by Extension
+		if (! (jMetadata.Type)) {		
+			//Failed to get metadata Type : Order by Extension
 			var o = utils.parseHref(href);
 	
 			var fname = o.label;
@@ -346,67 +332,77 @@ exports.insertFile = function (req, res) {
 exports.getDatas = function(req, res) {
 	var path 	= req.params.filepath;
 	console.log("\nCall getDatas: " + path); 
-
-	//Callback
+	
+	//Get metadata per versions
+	var o = utils.parseHref(path);
+	var filepath = o.filepath;
+	var jResults = []; 
+	
+	//
+	// Send response callback
+	// 
+	function sendResponse() { 
+		res.send({ data : jResults });
+	}
+	
+	//--
+	// Callback when end getDataInfos
+	//--
 	var dataInfoDone = function(jData) {
+		
 		//Get all others versions
 		jData.metaByVersion = {}; 
-
-		//
-		// Send response callback
-		//
-		var jResults = []; 
-		function sendResponse() { 
-			res.send({ data : jResults });
-		}
-		
-		//Get metadata per versions
-		var o = utils.parseHref(path);
-		var filepath = o.filepath;
-
+ 
 		// Read Properties of each version (for metadataByVersion)
-		var tabVersion = jData.versions.slice();
-		
-		//End get properties for versions
-		var endGetProperties = function(jMeta) {
-			var sVer = ("" + tabVersion.shift());
-			jMeta.Version = sVer;
-			
-			jData.metaByVersion[sVer] = jMeta;
-			if (tabVersion.length===0) {
-				jResults.push(jData);
-				
-				//Continue ... read Links
-				//mongoose.set('debug', true);
-				readLinks("parent", jData, jResults, function() {
-					//console.log("End get parent ..."); 
-					if (jData.children.length>0) { 
-						readLinks("children", jData, jResults, sendResponse);
-					}
-					else {
-						sendResponse();
-					}
-				});
-			}
-			else {
-				nextProperties(sVer);
-			}
-		};
+		var tabVersion = jData.versions.slice(); 
 		
 		//--
 		// Read Properties of each version (for metadataByVersion)
 		//-- 
-		function nextProperties(sVer) {   
-			if ( (""+sVer) !== jData.version) {		
-				var sPathVers = o.filepath + "?ver=" + sVer;
-				getProperties(sPathVers, endGetProperties); 
+		function nextProperties() { 
+			//Read current version
+			var curVersion = ("" + tabVersion.shift());
+			
+			//--
+			//End get properties for versions
+			//--
+			var endGetProperties = function(jMeta) { 
+				
+				jData.metaByVersion[curVersion] = jMeta;
+				
+				if (tabVersion.length>0) {
+					nextProperties();
+				}
+				else {
+					//Append result
+					jResults.push(jData);
+					
+					//Continue ... read Links
+					//mongoose.set('debug', true);
+					readLinks("parent", jData, jResults, function() {
+						//console.log("End get parent ..."); 
+						if (jData.children.length>0) { 
+							readLinks("children", jData, jResults, sendResponse);
+						}
+						else {
+							sendResponse();
+						}
+					});
+				} 
+			}; //endGetProperties
+			
+			if (curVersion !== jData.version) {
+				getProperties(filepath+"?ver="+curVersion, endGetProperties); 
 			}
 			else {
 				endGetProperties(jData.metadata);
 			}
-		}
-		nextProperties(tabVersion[0]);
-	}; //end send result
+		} //End nextProperties
+		
+		//-- Call next property
+		nextProperties();
+		
+	}; //end dataInfoDone
 	
 	//--
 	// Get the data from db
@@ -493,10 +489,11 @@ exports.getEntryInfo = function(request, response) {
 ///--- TREE HANDLER //////////////////////////////////////////////////////
 
 /** Get TREE nodes */
-exports.getTreeNodes = function(request, response) {
+exports.getTreeDatas = function(request, response) {
 
 	//Root Path
-	var sPathUri = request.params.path;
+	var path = request.params.path;
+	var sPathUri = path;
 	if (!sPathUri) {
 		response.status(500).send({responseText : "No search 'root path' parameter was given"});
 	}
@@ -508,23 +505,29 @@ exports.getTreeNodes = function(request, response) {
 		bfoldOnly = true;
 	}
 
-	var rLevel = 0; //root level
-	var sLevel = request.params.rootLevel;	
+	var rLevel = 1; //root level
+	var sLevel = request.params.level;	
 	if (sLevel) {
-		rLevel = Number(sLevel);
+		rLevel = Number( ("1"+sLevel));
+	}
+	
+	if (! sPathUri.endsWith("/")) {
+		sPathUri += "/";
+	}
+	else {
+		path = path.substring(0, path.length -1);
 	}
 
 	//Get all active files
-	DataModel.find({isActive : true}, {href:1, filepath:1, _id: 0}) //get href and filepath only
+	DataModel.find({isActive : true, href: new RegExp('^'+sPathUri+'*', "i") }, {href:1, filepath:1, _id: 0})
 	.sort({ href: 1 }) //sort by href asc
 	.exec(function(err, docs) {
-
 		if (err) {
 			response.status(500).send(err.data);
 		}
 		else {
 			/// Send results roots
-			tree.parseTree(docs, rLevel, bfoldOnly, function(results) {
+			tree.parseNode(docs, path, bfoldOnly, rLevel, function(results) {
 				response.send(results);
 			});
 		}

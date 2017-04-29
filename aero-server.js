@@ -23,7 +23,8 @@ app.get('/getDatas/:level/:filepath', api.getDatas);
 app.get('/getEntry/:path/:lnkdir', api.getEntryInfo);
 app.get('/getListFiles/:path', api.getListFiles);
 app.get('/removeFiles/:path', api.removeFiles);
+app.get('/getTreeDatas/:path/:folder/:level', api.getTreeDatas);
 
-app.set('port', process.env.PORT || 3000);
+app.set('port', process.env.PORT || 81);
 app.listen(app.get('port'));
 console.log('Server started at : ' + app.get('port'));

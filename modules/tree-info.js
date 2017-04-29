@@ -9,7 +9,7 @@ var utils    = require('./utils.js');
 /**
  * Parse Tree
  */
-exports.parseTree = function(docs, rLevel, bfoldOnly, callback) {
+exports.parseTree = function(docs, rootLevel, bfoldOnly, callback) {
 	var results = []; 
 	var all_nodes = {};
 	
@@ -25,7 +25,7 @@ exports.parseTree = function(docs, rLevel, bfoldOnly, callback) {
 		for (var j=1; j<tb.length; j++) {
 
 			//Skip root < rootlevel (ex: Projects)
-			if ((j-1) < rLevel) {
+			if ((j-1) < rootLevel) {
 				continue;
 			}
 			
@@ -52,7 +52,7 @@ exports.parseTree = function(docs, rLevel, bfoldOnly, callback) {
 				}
 				
 				//Add first dir after projects to root node
-				if ((j-1) === rLevel) {
+				if ((j-1) === rootLevel) {
 					results.push(node);
 				}
 			}
@@ -69,6 +69,86 @@ exports.parseTree = function(docs, rLevel, bfoldOnly, callback) {
 			}; 
 			var pNode = all_nodes[dir];
 			pNode.nodes.push(fnode);
+		}
+	}
+};
+ 
+exports.parseNode = function(docs, rootNodePath, bfoldOnly, ilevel, callback) {
+	var results = []; 
+	var all_nodes = {};
+	
+	var rootNode = { "text"  : lib_path.dirname(rootNodePath)
+					, "href" : rootNodePath
+					, "tags" : "0"
+					, "nodes": []
+			};
+	all_nodes[rootNodePath] = rootNode;
+	results.push(rootNode);
+	
+	var idx = rootNodePath.split("/").length;
+	var bFound = false;
+	
+	for (var i=0; i<docs.length; i++) {
+		var data = docs[i];
+		if (!data.href.startsWith(rootNodePath)) {
+			if (bFound) {
+				break;
+			}
+			else {
+				continue;
+			}
+		}
+		bFound = true;
+		
+		var file = utils.parseHref(data.href);
+		
+		//Get folders
+		var dir = lib_path.dirname(data.href);
+		var tb = dir.split("/");
+		var max = idx + ilevel;
+		
+		var curPath = rootNodePath;
+		
+		//Start to 1 because tb[0] is empty
+		for (var j=idx; j<max; j++) {
+			if (tb.length<=j) {
+				break;
+			}
+			
+			//Parent folder
+			var p_fold = curPath;
+			
+			//Current folder
+			var fname = tb[j];
+			curPath += "/" + fname;
+			
+			//If not new folder
+			if ( (curPath in all_nodes) ) {
+				continue;
+			}
+			
+			var node = { "text"  : fname
+						, "href" : curPath 
+					   };
+			
+			//File
+			if ( (tb.length-1) === j ) {
+				if (bfoldOnly) {
+					continue;
+				}
+				//Add the file node
+				node.tags = "1";    //(isFile ? "1" : "0") ?? 
+			}
+			else { 
+				node.tags =  "0";
+				node.nodes = []; 
+			}
+			
+			all_nodes[curPath] = node;
+
+			//Node must push to its parent 
+			var p_node = all_nodes[p_fold];
+			p_node.nodes.push(node); 
 		}
 	}
 };
