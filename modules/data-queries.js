@@ -11,6 +11,7 @@ var textSearch = require('mongoose-text-search');
 var fs = require('fs');
 var lib_path = require('path');
 var escapere = require('escape-regexp');
+var mime =  require('mime');
 
 var utils = require('./utils.js');
 var tree = require('./tree-info.js');
@@ -508,7 +509,7 @@ exports.getTreeDatas = function(request, response) {
 	var rLevel = 1; //root level
 	var sLevel = request.params.level;	
 	if (sLevel) {
-		rLevel = Number( ("1"+sLevel));
+		rLevel = Number(sLevel);
 	}
 	
 	if (! sPathUri.endsWith("/")) {
@@ -527,9 +528,9 @@ exports.getTreeDatas = function(request, response) {
 		}
 		else {
 			/// Send results roots
-			tree.parseNode(docs, path, bfoldOnly, rLevel, function(results) {
-				response.send(results);
-			});
+			var results = tree.parseNode(docs, path, bfoldOnly, rLevel); 
+			//console.log("Tree: " + JSON.stringify(results, null, 4));
+			response.send({ data: results });
 		}
 	});
 }; //end getTreeNodes
@@ -601,6 +602,25 @@ exports.removeFiles = function(request, response) {
 		}
 	}
 	removeFile();
+};
+
+exports.getFile = function(req, response) {
+	var path = req.params.path;
+	
+	var fname= lib_path.basename(path);
+	var mimeType = mime.lookup(fname);
+ 
+	var filePath = lib_path.normalize(__dirname + '/../../AeroDatas/' + path);
+	fs.readFile(filePath, function(error, content) {
+		if (error) {
+			response.writeHead(500);
+			response.end();
+		}
+		else {
+			response.writeHead(200, {'Content-Type': mimeType});
+			response.end(content, 'utf-8');
+		}
+	});
 };
 
  

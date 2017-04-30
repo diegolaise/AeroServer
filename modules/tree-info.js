@@ -73,7 +73,9 @@ exports.parseTree = function(docs, rootLevel, bfoldOnly, callback) {
 	}
 };
  
-exports.parseNode = function(docs, rootNodePath, bfoldOnly, ilevel, callback) {
+exports.parseNode = function(docs, rootNodePath, bfoldOnly, ilevel) {
+	console.log("Parse: " + rootNodePath + " : " + docs.length);
+	
 	var results = []; 
 	var all_nodes = {};
 	
@@ -87,9 +89,10 @@ exports.parseNode = function(docs, rootNodePath, bfoldOnly, ilevel, callback) {
 	
 	var idx = rootNodePath.split("/").length;
 	var bFound = false;
+	var max = idx + ilevel;
 	
 	for (var i=0; i<docs.length; i++) {
-		var data = docs[i];
+		var data = docs[i]._doc;
 		if (!data.href.startsWith(rootNodePath)) {
 			if (bFound) {
 				break;
@@ -99,22 +102,19 @@ exports.parseNode = function(docs, rootNodePath, bfoldOnly, ilevel, callback) {
 			}
 		}
 		bFound = true;
-		
-		var file = utils.parseHref(data.href);
-		
-		//Get folders
-		var dir = lib_path.dirname(data.href);
-		var tb = dir.split("/");
-		var max = idx + ilevel;
-		
+		 
+		//Get folders 
+		var tb = data.href.split("/");  
 		var curPath = rootNodePath;
+		var n = tb.length;
+		if (n<max) {
+			max = n;
+		}
+		//console.log("- " + data.href);
 		
 		//Start to 1 because tb[0] is empty
 		for (var j=idx; j<max; j++) {
-			if (tb.length<=j) {
-				break;
-			}
-			
+
 			//Parent folder
 			var p_fold = curPath;
 			
@@ -123,7 +123,8 @@ exports.parseNode = function(docs, rootNodePath, bfoldOnly, ilevel, callback) {
 			curPath += "/" + fname;
 			
 			//If not new folder
-			if ( (curPath in all_nodes) ) {
+			if ( all_nodes.hasOwnProperty(curPath) ) {
+			//if ( (curPath in all_nodes) ) { 
 				continue;
 			}
 			
@@ -132,14 +133,14 @@ exports.parseNode = function(docs, rootNodePath, bfoldOnly, ilevel, callback) {
 					   };
 			
 			//File
-			if ( (tb.length-1) === j ) {
+			if ( (n-1) === j ) {
 				if (bfoldOnly) {
 					continue;
 				}
 				//Add the file node
 				node.tags = "1";    //(isFile ? "1" : "0") ?? 
 			}
-			else { 
+			else { //Folder
 				node.tags =  "0";
 				node.nodes = []; 
 			}
@@ -149,6 +150,10 @@ exports.parseNode = function(docs, rootNodePath, bfoldOnly, ilevel, callback) {
 			//Node must push to its parent 
 			var p_node = all_nodes[p_fold];
 			p_node.nodes.push(node); 
+			//console.log("Add " + curPath);
 		}
 	}
+	
+	//Send reuslt callback
+	return results;
 };
