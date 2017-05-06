@@ -263,7 +263,7 @@ function readLinks(lnk_direction, jData, jResults, callback) {
 					if (err) {
 						console.log('readLinks '+ path + ' error: ' + JSON.stringify(err, null, 4) );
 					} 
-					else {
+					else if (docs) {
 						json = docs._doc;
 					}
 		
